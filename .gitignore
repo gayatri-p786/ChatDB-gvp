@@ -1,0 +1,38 @@
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+.eggs/
+lib/
+lib64/
+parts/
+var/
+downloads/
+eggs/
+.installed.cfg
+*.egg-info/
+*.egg
+
+# Virtual environment
+venv/
+ENV/
+env/
+chatdb/
+venv.bak/
+
+# IDE specific files
+.vscode/
+.idea/
+
+# Miscellaneous
+*.log
+*.DS_Store
+*.env
+
+# Data files (if not meant to be shared)
+datasets/
