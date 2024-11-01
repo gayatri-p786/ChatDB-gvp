@@ -3,6 +3,8 @@ import mysql.connector
 import pandas as pd
 import csv
 import os
+import json
+from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 app = Flask(__name__)
 
@@ -84,10 +86,108 @@ class ChatDB:
         except mysql.connector.Error as err:
             return {"error": str(err)}
 
+    def get_schema_info(self, database):
+        
+        cursor = self.cursor
+        print("here")
+
+        # Get table names
+        cursor.execute("SHOW TABLES")
+        tables = cursor.fetchall()
+        schema = {
+            "db_id": database,
+            "table_names": [table[0] for table in tables],
+            "columns": {},
+            "primary_keys": [],
+            "foreign_keys": {}
+        }
+
+        # Get columns for each table
+        for idx, table in enumerate(schema["table_names"]):
+            cursor.execute(f"DESCRIBE {table}")
+            columns = cursor.fetchall()
+            schema["columns"][str(idx)] = [
+                {"column_name": col[0], "column_type": col[1].decode('utf-8') if isinstance(col[1], bytes) else col[1]} for col in columns
+            ]
+
+        # Get primary keys
+        for idx, table in enumerate(schema["table_names"]):
+            cursor.execute(f"SHOW KEYS FROM {table} WHERE Key_name = 'PRIMARY'")
+            primary_keys = cursor.fetchall()
+            for pk in primary_keys:
+                schema["primary_keys"].append(idx)
+
+        # Get foreign keys
+        for idx, table in enumerate(schema["table_names"]):
+            cursor.execute(f"""
+                SELECT column_name, referenced_table_name, referenced_column_name
+                FROM information_schema.key_column_usage
+                WHERE table_schema = '{database}' AND table_name = '{table}' AND referenced_table_name IS NOT NULL
+            """)
+            foreign_keys = cursor.fetchall()
+            schema["foreign_keys"][str(idx)] = [
+                [idx, schema["table_names"].index(fk[1])] for fk in foreign_keys
+            ]
+
+        cursor.close()
+        return schema
 
     def close(self):
         self.cursor.close()
         self.conn.close()
+
+
+def load_model(model_path):
+    try:
+        # Initialize tokenizer from base T5 model first
+        base_model_name = "t5-base"  # or "t5-small" if you used that as base
+        tokenizer = T5Tokenizer.from_pretrained(base_model_name)
+        
+        # Load the fine-tuned model
+        model = T5ForConditionalGeneration.from_pretrained(
+            model_path,
+            return_dict=True
+        )
+        
+        return tokenizer, model
+    except Exception as e:
+        print(f"Error loading model: {str(e)}")
+        raise
+
+def generate_query(schema_info, tokenizer, model):
+    try:
+        # Add prefix for T5 task
+        prefix = "generate sql: "
+        # print("Scema_info:",schema_info)
+        full_input = json.dumps(schema_info)
+        
+        # Tokenize with proper padding and truncation
+        inputs = tokenizer(
+            full_input,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=512
+        )
+        
+        # Generate SQL query with better parameters
+        output = model.generate(
+            inputs['input_ids'],
+            max_length=150,
+            do_sample=True,          # Enable sampling for more variability
+            top_k=50,                # Limit sampling to top K tokens
+            top_p=0.95,              # Use nucleus sampling
+            num_return_sequences=5,  # Number of sequences to return
+            pad_token_id=tokenizer.pad_token_id
+        )
+
+        
+        # Decode all generated queries
+        queries = [tokenizer.decode(output[i], skip_special_tokens=True) for i in range(len(output))]
+        return queries
+    except Exception as e:
+        print(f"Error generating query: {str(e)}")
+        raise
 
 # Flask Routes to Expose the API
 
@@ -127,6 +227,21 @@ def execute_query():
     result = db.execute_custom_query(query, params)
     db.close()
     return jsonify(result)
+
+@app.route("/api/generate_sql_query", methods=["POST"])
+def generate_sql_query():
+    req_data = request.get_json()
+    db_name = req_data.get("db_name")
+    db = ChatDB(host="localhost", user="root", password="password")
+
+    if not db.check_database_exists(db_name):
+        return jsonify({"error": f"Database '{db_name}' does not exist."}), 404
+
+    schema_info = db.get_schema_info(db_name)
+
+    tokenizer, model = load_model('./sql_query_generator')
+    generated_query = generate_query(schema_info, tokenizer, model)
+    return jsonify({"query": generated_query})
 
 # Utility functions for CSV and Excel parsing
 def parse_excel(file_path):
