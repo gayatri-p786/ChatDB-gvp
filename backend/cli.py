@@ -42,7 +42,7 @@ def upload_data(db):
 def generate_query_with_construct(db, db_name, construct):
     try:
         schema_info = db.get_schema_info(db_name)
-        tokenizer, model = load_model('./sql_query_generator')
+        tokenizer, model = load_model('sql_generation_model_2')
         generated_results = generate_query(schema_info, tokenizer, model, construct)
 
         if generated_results:
@@ -51,7 +51,7 @@ def generate_query_with_construct(db, db_name, construct):
             constructs = result['constructs']
             
             # Generate description
-            description = generate_description(query, constructs)
+            description = generate_description(query)
             
             print(f"Generated Query with {construct}:")
             print(f"Description: {description}")
@@ -68,7 +68,7 @@ def generate_sample_queries(db, db_name):
         schema_info = db.get_schema_info(db_name)
 
         # Load the model and tokenizer for generating SQL queries
-        tokenizer, model = load_model('./sql_query_generator')
+        tokenizer, model = load_model('./sql_generation_model_2')
 
         # Generate the SQL queries
         generated_results = generate_query(schema_info, tokenizer, model)
@@ -78,7 +78,7 @@ def generate_sample_queries(db, db_name):
             print(f"Generated Query {i + 1}:")
             
             # Generate description
-            description = generate_description(result['query'], result['constructs'])
+            description = generate_description(result['query'])
             
             print(f"Description: {description}")
             print(f"Query: {result['query']}")

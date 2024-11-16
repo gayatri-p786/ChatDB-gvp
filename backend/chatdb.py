@@ -54,7 +54,7 @@ class ChatDB:
             cursor.execute(f"CREATE DATABASE {database};")
             print(f"Database '{database}' created successfully.")
 
-        cursor.close()
+        # cursor.close()
         conn.close()
 
         # Now connect to the newly created or existing database
@@ -113,7 +113,7 @@ class ChatDB:
 
     def get_table_info_and_sample_data(self, table_name, sample_size=5):
         try:
-            cursor = self.conn.cursor(dictionary=True)
+            cursor = self.cursor
             
             # Get table structure
             cursor.execute(f"DESCRIBE {table_name}")
@@ -123,7 +123,7 @@ class ChatDB:
             cursor.execute(f"SELECT * FROM {table_name} LIMIT {sample_size}")
             sample_data = cursor.fetchall()
             
-            cursor.close()
+            # cursor.close()
             
             return {
                 "table_name": table_name,
@@ -137,7 +137,7 @@ class ChatDB:
     def get_schema_info(self, database):
         
         cursor = self.cursor
-        print("here")
+        # print("here")
 
         # Get table names
         cursor.execute("SHOW TABLES")
@@ -177,7 +177,7 @@ class ChatDB:
                 [idx, schema["table_names"].index(fk[1])] for fk in foreign_keys
             ]
 
-        cursor.close()
+        # cursor.close()
         return schema
 
     def close(self):
@@ -187,9 +187,9 @@ class ChatDB:
 
 def load_model(model_path):
     try:
-        # Initialize tokenizer from base T5 model first
-        base_model_name = "t5-base"  # or "t5-small" if you used that as base
-        tokenizer = T5Tokenizer.from_pretrained(base_model_name)
+        # print("model is here", model_path)
+        # Initialize tokenizer from pretrained T5 model first
+        tokenizer = T5Tokenizer.from_pretrained(model_path)
         
         # Load the fine-tuned model
         model = T5ForConditionalGeneration.from_pretrained(
@@ -229,28 +229,45 @@ def generate_query(schema_info, tokenizer, model, construct=None):
             pad_token_id=tokenizer.pad_token_id
         )
 
-        print("Raw model output:", output)
+        # print("Raw model output:", output)
 
         decoded_outputs = [tokenizer.decode(output[i], skip_special_tokens=True) for i in range(len(output))]
         
         results = []
         for decoded_output in decoded_outputs:
-            print("Decoded Output: ",decoded_output)
-            parts = decoded_output.split('\n')
-            if len(parts) >= 2:
-                constructs = parts[0].replace('Constructs: ', '').split(', ')
-                query = '\n'.join(parts[1:]).replace('Query: ', '')
-                results.append({'constructs': constructs, 'query': query})
-            else:
-                results.append({'constructs': [], 'query': decoded_output})
+            print("Decoded Output:", decoded_output)
 
+            # Initialize variables for query and constructs
+            query = ""
+            constructs = []
+
+            # Check if the output contains "Query:" and "Constructs:"
+            try:
+                # Extract the Query part
+                if "Query:" in decoded_output:
+                    query_part = decoded_output.split("Query:")[1].strip()
+                    if "Constructs:" in query_part:
+                        query = query_part.split("Constructs:")[0].strip()  # Exclude constructs
+                    else:
+                        query = query_part  # Take the remaining part if no Constructs section
+
+                # Extract the Constructs part if it exists
+                if "Constructs:" in decoded_output:
+                    constructs_part = decoded_output.split("Constructs:")[1].strip()
+                    constructs = [c.strip() for c in constructs_part.split(',')]  # Split constructs by comma
+
+            except Exception as e:
+                print(f"Error processing decoded output: {str(e)}")
+
+            results.append({'query': query, 'constructs': constructs})
         return results
+    
     except Exception as e:
         print(f"Error generating query: {str(e)}")
         raise
 
 
-def generate_description(query, constructs):
+def generate_description(query):
     description = "This query"
 
     # Identify the main action
@@ -269,15 +286,15 @@ def generate_description(query, constructs):
         select_clause = select_match.group(1)
         if '*' in select_clause:
             description += " all columns"
-        elif 'COUNT' in select_clause.upper():
+        elif re.search(r"\bCOUNT\s*\(", select_clause, re.IGNORECASE):
             description += " the count of"
-        elif 'SUM' in select_clause.upper():
+        elif re.search(r"\bSUM\s*\(", select_clause, re.IGNORECASE):
             description += " the sum of"
-        elif 'AVG' in select_clause.upper():
+        elif re.search(r"\bAVG\s*\(", select_clause, re.IGNORECASE):
             description += " the average of"
-        elif 'MAX' in select_clause.upper():
+        elif re.search(r"\bMAX\s*\(", select_clause, re.IGNORECASE):
             description += " the maximum of"
-        elif 'MIN' in select_clause.upper():
+        elif re.search(r"\bMIN\s*\(", select_clause, re.IGNORECASE):
             description += " the minimum of"
         else:
             description += f" {select_clause}"
@@ -285,35 +302,41 @@ def generate_description(query, constructs):
     # Identify the table(s)
     from_match = re.search(r"FROM\s+(.*?)(?:\s+WHERE|\s+GROUP BY|\s+ORDER BY|\s*$)", query, re.IGNORECASE)
     if from_match:
-        tables = from_match.group(1)
+        tables = from_match.group(1).strip()
         description += f" from the {tables} table(s)"
 
     # Describe JOIN if present
-    if "JOIN" in constructs:
+    join_match = re.search(r"JOIN\s+\w+", query, re.IGNORECASE)
+    if join_match:
         description += " and joins it with another table"
 
     # Describe WHERE clause if present
-    if "WHERE" in constructs:
+    where_match = re.search(r"WHERE\s+", query, re.IGNORECASE)
+    if where_match:
         description += " with specific conditions"
 
     # Describe GROUP BY if present
-    if "GROUP BY" in constructs:
-        group_by_match = re.search(r"GROUP BY\s+(.*?)(?:\s+HAVING|\s+ORDER BY|\s*$)", query, re.IGNORECASE)
-        if group_by_match:
-            group_by_columns = group_by_match.group(1)
-            description += f" grouped by {group_by_columns}"
+    group_by_match = re.search(r"GROUP BY\s+(.*?)(?:\s+HAVING|\s+ORDER BY|\s*$)", query, re.IGNORECASE)
+    if group_by_match:
+        group_by_columns = group_by_match.group(1).strip()
+        description += f" grouped by {group_by_columns}"
 
-    # Describe HAVING if present
-    if "HAVING" in constructs:
+    # Describe HAVING clause if present
+    having_match = re.search(r"HAVING\s+", query, re.IGNORECASE)
+    if having_match:
         description += " and filters the groups"
 
     # Describe ORDER BY if present
-    if "ORDER BY" in constructs:
-        description += " and sorts the results"
+    order_by_match = re.search(r"ORDER BY\s+(.*?)(?:\s+LIMIT|\s*$)", query, re.IGNORECASE)
+    if order_by_match:
+        order_by_columns = order_by_match.group(1).strip()
+        description += f" and sorts the results by {order_by_columns}"
 
     # Describe LIMIT if present
-    if "LIMIT" in constructs:
-        description += " with a limit on the number of results"
+    limit_match = re.search(r"LIMIT\s+\d+", query, re.IGNORECASE)
+    if limit_match:
+        limit_value = limit_match.group(0).split()[1]
+        description += f" with a limit of {limit_value} result(s)"
 
     return description.strip() + "."
 

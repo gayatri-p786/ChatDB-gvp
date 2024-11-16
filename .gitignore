@@ -37,4 +37,5 @@ venv.bak/
 
 # Data files (if not meant to be shared)
 datasets/
-sql_query_generator/
+sql_generation_model/
+sql_generation_model_2/
