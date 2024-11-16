@@ -1,14 +1,39 @@
-from flask import Flask, request, jsonify
 import mysql.connector
 import pandas as pd
 import csv
-import os
+import re
 import json
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
-app = Flask(__name__)
-
 class ChatDB:
+    @classmethod
+    def list_databases(cls, host, user, password):
+        try:
+            # Connect to MySQL server without specifying a database
+            conn = mysql.connector.connect(
+                host=host,
+                user=user,
+                password=password
+            )
+            cursor = conn.cursor()
+
+            # Execute query to show all databases
+            cursor.execute("SHOW DATABASES")
+
+            # Fetch all results
+            databases = [db[0] for db in cursor.fetchall()]
+
+            # Close cursor and connection
+            cursor.close()
+            conn.close()
+
+            return databases
+
+        except mysql.connector.Error as err:
+            print(f"Error: {err}")
+            return []
+        
+
     def __init__(self, host, user, password, database):
         # Connect to MySQL server without specifying a database
         conn = mysql.connector.connect(
@@ -86,6 +111,29 @@ class ChatDB:
         except mysql.connector.Error as err:
             return {"error": str(err)}
 
+    def get_table_info_and_sample_data(self, table_name, sample_size=5):
+        try:
+            cursor = self.conn.cursor(dictionary=True)
+            
+            # Get table structure
+            cursor.execute(f"DESCRIBE {table_name}")
+            table_structure = cursor.fetchall()
+            
+            # Get sample data
+            cursor.execute(f"SELECT * FROM {table_name} LIMIT {sample_size}")
+            sample_data = cursor.fetchall()
+            
+            cursor.close()
+            
+            return {
+                "table_name": table_name,
+                "structure": table_structure,
+                "sample_data": sample_data
+            }
+        except Exception as e:
+            print(f"Error getting table info and sample data: {e}")
+            return None
+
     def get_schema_info(self, database):
         
         cursor = self.cursor
@@ -154,14 +202,15 @@ def load_model(model_path):
         print(f"Error loading model: {str(e)}")
         raise
 
-def generate_query(schema_info, tokenizer, model):
+def generate_query(schema_info, tokenizer, model, construct=None):
     try:
-        # Add prefix for T5 task
-        prefix = "generate sql: "
-        # print("Scema_info:",schema_info)
         full_input = json.dumps(schema_info)
         
-        # Tokenize with proper padding and truncation
+        if construct:
+            full_input += f"\nTask: Generate a query using {construct}"
+        else:
+            full_input += "\nTask: Generate a random SQL query"
+        
         inputs = tokenizer(
             full_input,
             return_tensors="pt",
@@ -170,78 +219,103 @@ def generate_query(schema_info, tokenizer, model):
             max_length=512
         )
         
-        # Generate SQL query with better parameters
         output = model.generate(
             inputs['input_ids'],
-            max_length=150,
-            do_sample=True,          # Enable sampling for more variability
-            top_k=50,                # Limit sampling to top K tokens
-            top_p=0.95,              # Use nucleus sampling
-            num_return_sequences=5,  # Number of sequences to return
+            max_length=200,
+            do_sample=True,
+            top_k=50,
+            top_p=0.95,
+            num_return_sequences=5 if not construct else 1,
             pad_token_id=tokenizer.pad_token_id
         )
 
+        print("Raw model output:", output)
+
+        decoded_outputs = [tokenizer.decode(output[i], skip_special_tokens=True) for i in range(len(output))]
         
-        # Decode all generated queries
-        queries = [tokenizer.decode(output[i], skip_special_tokens=True) for i in range(len(output))]
-        return queries
+        results = []
+        for decoded_output in decoded_outputs:
+            print("Decoded Output: ",decoded_output)
+            parts = decoded_output.split('\n')
+            if len(parts) >= 2:
+                constructs = parts[0].replace('Constructs: ', '').split(', ')
+                query = '\n'.join(parts[1:]).replace('Query: ', '')
+                results.append({'constructs': constructs, 'query': query})
+            else:
+                results.append({'constructs': [], 'query': decoded_output})
+
+        return results
     except Exception as e:
         print(f"Error generating query: {str(e)}")
         raise
 
-# Flask Routes to Expose the API
 
-@app.route("/api/upload/csv", methods=["POST"])
-def upload_csv():
-    """Uploads a CSV file and imports the data into a database table."""
-    if 'file' not in request.files:
-        return jsonify({"error": "No file part in the request"}), 400
-    file = request.files['file']
+def generate_description(query, constructs):
+    description = "This query"
 
-    # Save file temporarily to process
-    file_path = os.path.join("/tmp", file.filename)
-    file.save(file_path)
+    # Identify the main action
+    if query.strip().upper().startswith("SELECT"):
+        description += " retrieves"
+    elif query.strip().upper().startswith("INSERT"):
+        description += " inserts"
+    elif query.strip().upper().startswith("UPDATE"):
+        description += " updates"
+    elif query.strip().upper().startswith("DELETE"):
+        description += " deletes"
 
-    # Parse CSV and insert into database
-    headers, data = parse_csv(file_path)
-    if headers and data:
-        table_name = file.filename.split(".")[0]  # Use the filename as table name
-        db = ChatDB(host="localhost", user="root", password="password", database="chatdb")
-        response = db.create_table_and_insert_data(table_name, headers, data)
-        db.close()
-        return jsonify(response)
-    else:
-        return jsonify({"error": "Failed to parse CSV file."}), 400
+    # Identify what's being selected
+    select_match = re.search(r"SELECT\s+(.*?)\s+FROM", query, re.IGNORECASE)
+    if select_match:
+        select_clause = select_match.group(1)
+        if '*' in select_clause:
+            description += " all columns"
+        elif 'COUNT' in select_clause.upper():
+            description += " the count of"
+        elif 'SUM' in select_clause.upper():
+            description += " the sum of"
+        elif 'AVG' in select_clause.upper():
+            description += " the average of"
+        elif 'MAX' in select_clause.upper():
+            description += " the maximum of"
+        elif 'MIN' in select_clause.upper():
+            description += " the minimum of"
+        else:
+            description += f" {select_clause}"
 
-@app.route("/api/query", methods=["POST"])
-def execute_query():
-    """Executes a custom SQL query and returns the result."""
-    req_data = request.get_json()
-    query = req_data.get("query")
-    params = req_data.get("params", None)
-    
-    if not query:
-        return jsonify({"error": "Query is required"}), 400
+    # Identify the table(s)
+    from_match = re.search(r"FROM\s+(.*?)(?:\s+WHERE|\s+GROUP BY|\s+ORDER BY|\s*$)", query, re.IGNORECASE)
+    if from_match:
+        tables = from_match.group(1)
+        description += f" from the {tables} table(s)"
 
-    db = ChatDB(host="localhost", user="root", password="password", database="chatdb")
-    result = db.execute_custom_query(query, params)
-    db.close()
-    return jsonify(result)
+    # Describe JOIN if present
+    if "JOIN" in constructs:
+        description += " and joins it with another table"
 
-@app.route("/api/generate_sql_query", methods=["POST"])
-def generate_sql_query():
-    req_data = request.get_json()
-    db_name = req_data.get("db_name")
-    db = ChatDB(host="localhost", user="root", password="password")
+    # Describe WHERE clause if present
+    if "WHERE" in constructs:
+        description += " with specific conditions"
 
-    if not db.check_database_exists(db_name):
-        return jsonify({"error": f"Database '{db_name}' does not exist."}), 404
+    # Describe GROUP BY if present
+    if "GROUP BY" in constructs:
+        group_by_match = re.search(r"GROUP BY\s+(.*?)(?:\s+HAVING|\s+ORDER BY|\s*$)", query, re.IGNORECASE)
+        if group_by_match:
+            group_by_columns = group_by_match.group(1)
+            description += f" grouped by {group_by_columns}"
 
-    schema_info = db.get_schema_info(db_name)
+    # Describe HAVING if present
+    if "HAVING" in constructs:
+        description += " and filters the groups"
 
-    tokenizer, model = load_model('./sql_query_generator')
-    generated_query = generate_query(schema_info, tokenizer, model)
-    return jsonify({"query": generated_query})
+    # Describe ORDER BY if present
+    if "ORDER BY" in constructs:
+        description += " and sorts the results"
+
+    # Describe LIMIT if present
+    if "LIMIT" in constructs:
+        description += " with a limit on the number of results"
+
+    return description.strip() + "."
 
 # Utility functions for CSV and Excel parsing
 def parse_excel(file_path):
@@ -267,5 +341,3 @@ def parse_csv(file_path):
         print(f"Error parsing CSV file: {e}")
         return None, None
 
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)

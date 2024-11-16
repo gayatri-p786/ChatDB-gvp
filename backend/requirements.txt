@@ -1,5 +1,8 @@
-Flask
 mysql-connector-python
+numpy
 pandas
-openpyxl
 nltk
+spacy
+torch
+sentencepiece
+transformers

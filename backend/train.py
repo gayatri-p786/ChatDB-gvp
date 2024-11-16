@@ -61,6 +61,8 @@ def prepare_data(final_dataset):
         for query in queries:
             input_text = f"Generate SQL query for schema: {schema_str}\nTask: {query['query_type']}"
             inputs.append(input_text)
+            constructs = ', '.join(query['constructs'])
+            outputs.append(f"Query: {query['query']}\nConstructs: {constructs}")
             outputs.append(query['query'])
 
     return inputs, outputs
@@ -80,7 +82,7 @@ def tokenize_data(inputs, outputs, tokenizer):
         outputs,
         padding='max_length',
         truncation=True,
-        max_length=128,
+        max_length=256,
         return_tensors='pt'
     )
     
@@ -185,13 +187,19 @@ def train_model():
                 truncation=True
             ).input_ids.to(device)
             
-            outputs = model.generate(input_ids, max_length=128)
-            predicted_query = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            outputs = model.generate(input_ids, max_length=256)
+            predicted_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            # Split the predicted output into query and constructs
+            predicted_parts = predicted_output.split('\nConstructs: ')
+            predicted_query = predicted_parts[0].replace('Query: ', '')
+            predicted_constructs = predicted_parts[1] if len(predicted_parts) > 1 else ''
             
             with open(f'{DRIVE_PATH}/example_predictions.txt', 'a') as f:
                 f.write(f"Input: {val_inputs[i]}\n")
                 f.write(f"Expected: {val_outputs[i]}\n")
-                f.write(f"Predicted: {predicted_query}\n")
+                f.write(f"Predicted Query: {predicted_query}\n")
+                f.write(f"Predicted Constructs: {predicted_constructs}\n")
                 f.write("-" * 80 + "\n")
 
 if __name__ == "__main__":

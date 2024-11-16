@@ -23,6 +23,7 @@ venv/
 ENV/
 env/
 chatdb/
+newenv/
 venv.bak/
 
 # IDE specific files
@@ -36,3 +37,4 @@ venv.bak/
 
 # Data files (if not meant to be shared)
 datasets/
+sql_query_generator/
