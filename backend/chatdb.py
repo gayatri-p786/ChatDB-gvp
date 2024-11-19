@@ -3,7 +3,7 @@ import pandas as pd
 import csv
 import re
 import json
-from transformers import T5Tokenizer, T5ForConditionalGeneration
+import random
 
 class ChatDB:
     @classmethod
@@ -180,6 +180,177 @@ class ChatDB:
         # cursor.close()
         return schema
 
+
+    def get_table_info(self):
+        try:
+            self.cursor.execute("SHOW TABLES")
+            tables = [table[0] for table in self.cursor.fetchall()]
+            
+            table_info = {}
+            for table in tables:
+                self.cursor.execute(f"DESCRIBE {table}")
+                columns = self.cursor.fetchall()
+                
+                numeric_cols = []
+                categorical_cols = []
+                
+                for col in columns:
+                    col_name = col[0]
+                    col_type = col[1]
+                    
+                    if 'int' in col_type.lower() or 'float' in col_type.lower() or 'double' in col_type.lower() or 'decimal' in col_type.lower():
+                        numeric_cols.append(col_name)
+                    else:
+                        categorical_cols.append(col_name)
+                
+                table_info[table] = {
+                    'columns': [{'Field': col[0], 'Type': col[1]} for col in columns],
+                    'numeric_columns': numeric_cols,
+                    'categorical_columns': categorical_cols
+                }
+            
+            return table_info
+        except mysql.connector.Error as err:
+            print(f"Error: {err}")
+            return {}
+        
+    def generate_query_templates(self):
+        table_info = self.get_table_info()
+        templates = []
+
+        for table, info in table_info.items():
+            numeric_cols = info['numeric_columns']
+            categorical_cols = info['categorical_columns']
+            all_cols = numeric_cols + categorical_cols
+
+            # Infer date columns based on column names
+            date_cols = [col for col in all_cols if 'date' in col.lower() or 'year' in col.lower()]
+
+            # Basic SELECT
+            templates.append(f"SELECT * FROM {table} LIMIT 10")
+
+            if numeric_cols and categorical_cols:
+                # Aggregation with GROUP BY
+                templates.append(f"SELECT {categorical_cols[0]}, SUM({numeric_cols[0]}) FROM {table} GROUP BY {categorical_cols[0]} LIMIT 5")
+                templates.append(f"SELECT {categorical_cols[0]}, AVG({numeric_cols[0]}) FROM {table} GROUP BY {categorical_cols[0]} ORDER BY AVG({numeric_cols[0]}) DESC LIMIT 5")
+                
+                # WHERE clause with both numeric and categorical
+                templates.append(f"SELECT * FROM {table} WHERE {categorical_cols[0]} = {{categorical}} AND {numeric_cols[0]} > {{numeric}} LIMIT 5")
+
+            if len(numeric_cols) >= 2:
+                # Multiple numeric columns
+                templates.append(f"SELECT * FROM {table} WHERE {numeric_cols[0]} BETWEEN {{numeric_low}} AND {{numeric_high}} LIMIT 5")
+
+            if len(categorical_cols) >= 2:
+                # Multiple categorical columns
+                templates.append(f"SELECT {categorical_cols[0]}, {categorical_cols[1]}, COUNT(*) FROM {table} GROUP BY {categorical_cols[0]}, {categorical_cols[1]} ORDER BY COUNT(*) DESC LIMIT 5")
+
+            if numeric_cols:
+                # Numeric operations
+                templates.append(f"SELECT MAX({numeric_cols[0]}) FROM {table}")
+                templates.append(f"SELECT MIN({numeric_cols[0]}) FROM {table}")
+                templates.append(f"SELECT AVG({numeric_cols[0]}) FROM {table}")
+
+            if categorical_cols:
+                # DISTINCT on categorical
+                templates.append(f"SELECT DISTINCT {categorical_cols[0]} FROM {table} LIMIT 5")
+                templates.append(f"SELECT {categorical_cols[0]}, COUNT(*) FROM {table} GROUP BY {categorical_cols[0]} HAVING COUNT(*) > {{numeric}} LIMIT 5")
+
+            # LIKE query
+            if categorical_cols:
+                templates.append(f"SELECT * FROM {table} WHERE {categorical_cols[0]} LIKE '{{like_pattern}}' LIMIT 5")
+
+            # ORDER BY
+            if all_cols:
+                templates.append(f"SELECT * FROM {table} ORDER BY {all_cols[0]} {{order}} LIMIT 10")
+
+            # Date specific queries
+            if date_cols:
+                templates.append(f"SELECT * FROM {table} WHERE {date_cols[0]} = '{{date}}' LIMIT 5")
+                if len(date_cols) >= 2:
+                    templates.append(f"SELECT * FROM {table} WHERE {date_cols[0]} BETWEEN '{{date_start}}' AND '{{date_end}}' LIMIT 5")
+
+        return templates
+
+    def generate_sample_queries(self, num_queries=5, construct=None):
+        templates = self.generate_query_templates()
+        table_info = self.get_table_info()
+
+        if construct:
+            templates = [t for t in templates if construct.lower() in t.lower()]
+            num_queries = 1
+
+        sample_queries = set()
+        attempts = 0
+        max_attempts = 50
+
+        while len(sample_queries) < num_queries and attempts < max_attempts:
+            if not templates:
+                break
+
+            template = random.choice(templates)
+            
+            for table, info in table_info.items():
+                if table in template:
+                    query = template
+                    placeholders = re.findall(r'\{(\w+)\}', query)
+                    
+                    for placeholder in placeholders:
+                        if placeholder.startswith('numeric'):
+                            if info['numeric_columns']:
+                                col = random.choice(info['numeric_columns'])
+                                self.cursor.execute(f"SELECT {col} FROM {table} ORDER BY RAND() LIMIT 1")
+                                result = self.cursor.fetchone()
+                                value = result[0] if result else 0
+                                query = query.replace(f"{{{placeholder}}}", str(value))
+                            else:
+                                # If no numeric columns, replace with a default value
+                                query = query.replace(f"{{{placeholder}}}", "0")
+                        elif placeholder.startswith('categorical'):
+                            if info['categorical_columns']:
+                                col = random.choice(info['categorical_columns'])
+                                self.cursor.execute(f"SELECT DISTINCT {col} FROM {table} ORDER BY RAND() LIMIT 1")
+                                result = self.cursor.fetchone()
+                                value = result[0] if result else ''
+                                query = query.replace(f"{{{placeholder}}}", f"'{value}'")
+                            else:
+                                # If no categorical columns, replace with a default value
+                                query = query.replace(f"{{{placeholder}}}", "''")
+                        elif placeholder in ['date', 'date_start', 'date_end']:
+                            date_cols = [col for col in info['categorical_columns'] if 'date' in col.lower() or 'year' in col.lower()]
+                            if date_cols:
+                                col = random.choice(date_cols)
+                                self.cursor.execute(f"SELECT {col} FROM {table} ORDER BY RAND() LIMIT 1")
+                                result = self.cursor.fetchone()
+                                value = result[0] if result else '2000-01-01'
+                                query = query.replace(f"{{{placeholder}}}", f"'{value}'")
+                            else:
+                                # If no date columns, replace with a default value
+                                query = query.replace(f"{{{placeholder}}}", "'2000-01-01'")
+                        elif placeholder == 'like_pattern':
+                            if info['categorical_columns']:
+                                col = random.choice(info['categorical_columns'])
+                                self.cursor.execute(f"SELECT {col} FROM {table} ORDER BY RAND() LIMIT 1")
+                                result = self.cursor.fetchone()
+                                value = result[0] if result else ''
+                                pattern = f"%{value[:3]}%" if value else '%'
+                                query = query.replace(f"{{{placeholder}}}", f"'{pattern}'")
+                            else:
+                                # If no categorical columns, replace with a default pattern
+                                query = query.replace(f"{{{placeholder}}}", "'%'")
+                        elif placeholder == 'order':
+                            order = random.choice(['ASC', 'DESC'])
+                            query = query.replace(f"{{{placeholder}}}", order)
+
+                    break
+
+            if query not in sample_queries:
+                sample_queries.add(query)
+
+            attempts += 1
+
+        return list(sample_queries)
+
     def close(self):
         self.cursor.close()
         self.conn.close()
@@ -266,7 +437,6 @@ def generate_query(schema_info, tokenizer, model, construct=None):
         print(f"Error generating query: {str(e)}")
         raise
 
-
 def generate_description(query):
     description = "This query"
 
@@ -287,15 +457,17 @@ def generate_description(query):
         if '*' in select_clause:
             description += " all columns"
         elif re.search(r"\bCOUNT\s*\(", select_clause, re.IGNORECASE):
-            description += " the count of"
-        elif re.search(r"\bSUM\s*\(", select_clause, re.IGNORECASE):
-            description += " the sum of"
-        elif re.search(r"\bAVG\s*\(", select_clause, re.IGNORECASE):
-            description += " the average of"
+            description += " the count of rows"
+        elif re.search(r"\bSUM\s*\((\w+)\)", select_clause, re.IGNORECASE):
+            sum_col = re.search(r"\bSUM\s*\((\w+)\)", select_clause, re.IGNORECASE).group(1)
+            description += f" the sum of {sum_col}"
+        elif re.search(r"\bAVG\s*\((\w+)\)", select_clause, re.IGNORECASE):
+            avg_col = re.search(r"\bAVG\s*\((\w+)\)", select_clause, re.IGNORECASE).group(1)
+            description += f" the average of {avg_col}"
         elif re.search(r"\bMAX\s*\(", select_clause, re.IGNORECASE):
-            description += " the maximum of"
+            description += " the maximum value"
         elif re.search(r"\bMIN\s*\(", select_clause, re.IGNORECASE):
-            description += " the minimum of"
+            description += " the minimum value"
         else:
             description += f" {select_clause}"
 
@@ -303,17 +475,13 @@ def generate_description(query):
     from_match = re.search(r"FROM\s+(.*?)(?:\s+WHERE|\s+GROUP BY|\s+ORDER BY|\s*$)", query, re.IGNORECASE)
     if from_match:
         tables = from_match.group(1).strip()
-        description += f" from the {tables} table(s)"
-
-    # Describe JOIN if present
-    join_match = re.search(r"JOIN\s+\w+", query, re.IGNORECASE)
-    if join_match:
-        description += " and joins it with another table"
+        description += f" from the {tables} table"
 
     # Describe WHERE clause if present
-    where_match = re.search(r"WHERE\s+", query, re.IGNORECASE)
+    where_match = re.search(r"WHERE\s+(.*?)(?:\s+GROUP BY|\s+ORDER BY|\s*$)", query, re.IGNORECASE)
     if where_match:
-        description += " with specific conditions"
+        where_clause = where_match.group(1).strip()
+        description += f" where {where_clause}"
 
     # Describe GROUP BY if present
     group_by_match = re.search(r"GROUP BY\s+(.*?)(?:\s+HAVING|\s+ORDER BY|\s*$)", query, re.IGNORECASE)
@@ -322,21 +490,22 @@ def generate_description(query):
         description += f" grouped by {group_by_columns}"
 
     # Describe HAVING clause if present
-    having_match = re.search(r"HAVING\s+", query, re.IGNORECASE)
+    having_match = re.search(r"HAVING\s+(.*?)(?:\s+ORDER BY|\s*$)", query, re.IGNORECASE)
     if having_match:
-        description += " and filters the groups"
+        having_clause = having_match.group(1).strip()
+        description += f" having {having_clause}"
 
     # Describe ORDER BY if present
     order_by_match = re.search(r"ORDER BY\s+(.*?)(?:\s+LIMIT|\s*$)", query, re.IGNORECASE)
     if order_by_match:
         order_by_columns = order_by_match.group(1).strip()
-        description += f" and sorts the results by {order_by_columns}"
+        description += f" ordered by {order_by_columns}"
 
     # Describe LIMIT if present
-    limit_match = re.search(r"LIMIT\s+\d+", query, re.IGNORECASE)
+    limit_match = re.search(r"LIMIT\s+(\d+)", query, re.IGNORECASE)
     if limit_match:
-        limit_value = limit_match.group(0).split()[1]
-        description += f" with a limit of {limit_value} result(s)"
+        limit_value = limit_match.group(1)
+        description += f" limited to {limit_value} result(s)"
 
     return description.strip() + "."
 

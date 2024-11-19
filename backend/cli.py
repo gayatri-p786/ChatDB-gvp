@@ -175,14 +175,22 @@ def main():
             if not current_database:
                 print("Please select a database first.")
             else:
-                generate_sample_queries(db, current_database)
+                sample_queries = db.generate_sample_queries()
+                print("Generated Sample Queries:")
+                for i, query in enumerate(sample_queries, 1):
+                    print(f"{i}. {query}")
+                # generate_sample_queries(db, current_database)
 
         elif "generate" in user_input and "query" in user_input and "using" in user_input:
             if not current_database:
                 print("Please select a database first.")
             else:
                 construct = user_input.split("using")[-1].strip()
-                generate_query_with_construct(db, current_database, construct)
+                sample_queries = db.generate_sample_queries(construct=construct)
+                print(f"Generated Query using {construct}:")
+                for query in sample_queries:
+                    print(query)
+                # generate_query_with_construct(db, current_database, construct)
 
         else:
             print("I'm not sure how to help with that. You can ask me to:")
