@@ -3,7 +3,7 @@
 import os
 import sys
 import re
-from chatdb import ChatDB, parse_excel, parse_csv, load_model, generate_query, generate_description  # Import necessary functions
+from chatdb import ChatDB, parse_excel, parse_csv, generate_description  # Import necessary functions
 
 
 def create_table_and_import_data(db, sheets):
@@ -39,53 +39,53 @@ def upload_data(db):
     else:
         print("Unsupported file type. Only .xlsx and .csv files are supported.")
 
-def generate_query_with_construct(db, db_name, construct):
-    try:
-        schema_info = db.get_schema_info(db_name)
-        tokenizer, model = load_model('sql_generation_model_2')
-        generated_results = generate_query(schema_info, tokenizer, model, construct)
+# def generate_query_with_construct(db, db_name, construct):
+#     try:
+#         schema_info = db.get_schema_info(db_name)
+#         tokenizer, model = load_model('sql_generation_model_2')
+#         generated_results = generate_query(schema_info, tokenizer, model, construct)
 
-        if generated_results:
-            result = generated_results[0]
-            query = result['query']
-            constructs = result['constructs']
+#         if generated_results:
+#             result = generated_results[0]
+#             query = result['query']
+#             constructs = result['constructs']
             
-            # Generate description
-            description = generate_description(query)
+#             # Generate description
+#             description = generate_description(query)
             
-            print(f"Generated Query with {construct}:")
-            print(f"Description: {description}")
-            print(f"Query: {query}")
-            print(f"Constructs: {', '.join(constructs)}")
-        else:
-            print(f"No query generated for construct: {construct}")
-    except Exception as e:
-        print(f"An error occurred while generating query with construct: {e}")
+#             print(f"Generated Query with {construct}:")
+#             print(f"Description: {description}")
+#             print(f"Query: {query}")
+#             print(f"Constructs: {', '.join(constructs)}")
+#         else:
+#             print(f"No query generated for construct: {construct}")
+#     except Exception as e:
+#         print(f"An error occurred while generating query with construct: {e}")
 
-def generate_sample_queries(db, db_name):
-    try:
-        # Retrieve the schema information for the connected database
-        schema_info = db.get_schema_info(db_name)
+# def generate_sample_queries(db, db_name):
+#     try:
+#         # Retrieve the schema information for the connected database
+#         schema_info = db.get_schema_info(db_name)
 
-        # Load the model and tokenizer for generating SQL queries
-        tokenizer, model = load_model('./sql_generation_model_2')
+#         # Load the model and tokenizer for generating SQL queries
+#         tokenizer, model = load_model('./sql_generation_model_2')
 
-        # Generate the SQL queries
-        generated_results = generate_query(schema_info, tokenizer, model)
+#         # Generate the SQL queries
+#         generated_results = generate_query(schema_info, tokenizer, model)
 
-        # Handle the generated queries, constructs, and descriptions
-        for i, result in enumerate(generated_results):
-            print(f"Generated Query {i + 1}:")
+#         # Handle the generated queries, constructs, and descriptions
+#         for i, result in enumerate(generated_results):
+#             print(f"Generated Query {i + 1}:")
             
-            # Generate description
-            description = generate_description(result['query'])
+#             # Generate description
+#             description = generate_description(result['query'])
             
-            print(f"Description: {description}")
-            print(f"Query: {result['query']}")
-            print(f"Constructs: {', '.join(result['constructs'])}")
-            print("---")
-    except Exception as e:
-        print(f"An error occurred while generating sample queries: {e}")
+#             print(f"Description: {description}")
+#             print(f"Query: {result['query']}")
+#             print(f"Constructs: {', '.join(result['constructs'])}")
+#             print("---")
+#     except Exception as e:
+#         print(f"An error occurred while generating sample queries: {e}")
 
 def display_table_info(db, table_name):
     table_info = db.get_table_info_and_sample_data(table_name)
@@ -178,8 +178,42 @@ def main():
                 sample_queries = db.generate_sample_queries()
                 print("Generated Sample Queries:")
                 for i, query in enumerate(sample_queries, 1):
-                    print(f"{i}. {query}")
-                # generate_sample_queries(db, current_database)
+                    description = generate_description(query)
+                    print(f"Query {i}:")
+                    print(f"Description: {description}")
+                    print(f"SQL: {query}")
+                    print()
+                
+                while True:
+                    execute_option = input("\nEnter the number of the query you'd like to execute (1-5), 'all' to execute all, or 'exit' to return to the main menu: ").strip().lower()
+                    
+                    if execute_option == 'exit':
+                        break
+                    elif execute_option == 'all':
+                        for i, query in enumerate(sample_queries, 1):
+                            print(f"\nExecuting Query {i}:")
+                            print(f"SQL: {query}")
+                            result = db.execute_custom_query(query)
+                            if "error" in result:
+                                print(f"Error executing query: {result['error']}")
+                            else:
+                                print("Query results:")
+                                for row in result['data']:
+                                    print(row)
+                    elif execute_option.isdigit() and 1 <= int(execute_option) <= 5:
+                        query_index = int(execute_option) - 1
+                        query_to_execute = sample_queries[query_index]
+                        print(f"\nExecuting Query {execute_option}:")
+                        print(f"SQL: {query_to_execute}")
+                        result = db.execute_custom_query(query_to_execute)
+                        if "error" in result:
+                            print(f"Error executing query: {result['error']}")
+                        else:
+                            print("Query results:")
+                            for row in result['data']:
+                                print(row)
+                    else:
+                        print("Invalid input. Please enter a number between 1 and 5, 'all', or 'exit'.")
 
         elif "generate" in user_input and "query" in user_input and "using" in user_input:
             if not current_database:
@@ -188,9 +222,24 @@ def main():
                 construct = user_input.split("using")[-1].strip()
                 sample_queries = db.generate_sample_queries(construct=construct)
                 print(f"Generated Query using {construct}:")
-                for query in sample_queries:
-                    print(query)
-                # generate_query_with_construct(db, current_database, construct)
+                for i, query in enumerate(sample_queries, 1):
+                    description = generate_description(query)
+                    print(f"Query {i}:")
+                    print(f"Description: {description}")
+                    print(f"SQL: {query}")
+                    print()
+                
+                execute_option = input("Would you like to execute this query? (yes/no): ").strip().lower()
+                if execute_option == 'yes':
+                    query_to_execute = sample_queries[0]  # There's only one query when using a specific construct
+                    print(f"Executing query: {query_to_execute}")
+                    result = db.execute_custom_query(query_to_execute)
+                    if "error" in result:
+                        print(f"Error executing query: {result['error']}")
+                    else:
+                        print("Query results:")
+                        for row in result['data']:
+                            print(row)
 
         else:
             print("I'm not sure how to help with that. You can ask me to:")

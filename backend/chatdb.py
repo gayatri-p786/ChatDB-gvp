@@ -356,86 +356,86 @@ class ChatDB:
         self.conn.close()
 
 
-def load_model(model_path):
-    try:
-        # print("model is here", model_path)
-        # Initialize tokenizer from pretrained T5 model first
-        tokenizer = T5Tokenizer.from_pretrained(model_path)
+# def load_model(model_path):
+#     try:
+#         # print("model is here", model_path)
+#         # Initialize tokenizer from pretrained T5 model first
+#         tokenizer = T5Tokenizer.from_pretrained(model_path)
         
-        # Load the fine-tuned model
-        model = T5ForConditionalGeneration.from_pretrained(
-            model_path,
-            return_dict=True
-        )
+#         # Load the fine-tuned model
+#         model = T5ForConditionalGeneration.from_pretrained(
+#             model_path,
+#             return_dict=True
+#         )
         
-        return tokenizer, model
-    except Exception as e:
-        print(f"Error loading model: {str(e)}")
-        raise
+#         return tokenizer, model
+#     except Exception as e:
+#         print(f"Error loading model: {str(e)}")
+#         raise
 
-def generate_query(schema_info, tokenizer, model, construct=None):
-    try:
-        full_input = json.dumps(schema_info)
+# def generate_query(schema_info, tokenizer, model, construct=None):
+#     try:
+#         full_input = json.dumps(schema_info)
         
-        if construct:
-            full_input += f"\nTask: Generate a query using {construct}"
-        else:
-            full_input += "\nTask: Generate a random SQL query"
+#         if construct:
+#             full_input += f"\nTask: Generate a query using {construct}"
+#         else:
+#             full_input += "\nTask: Generate a random SQL query"
         
-        inputs = tokenizer(
-            full_input,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=512
-        )
+#         inputs = tokenizer(
+#             full_input,
+#             return_tensors="pt",
+#             padding=True,
+#             truncation=True,
+#             max_length=512
+#         )
         
-        output = model.generate(
-            inputs['input_ids'],
-            max_length=200,
-            do_sample=True,
-            top_k=50,
-            top_p=0.95,
-            num_return_sequences=5 if not construct else 1,
-            pad_token_id=tokenizer.pad_token_id
-        )
+#         output = model.generate(
+#             inputs['input_ids'],
+#             max_length=200,
+#             do_sample=True,
+#             top_k=50,
+#             top_p=0.95,
+#             num_return_sequences=5 if not construct else 1,
+#             pad_token_id=tokenizer.pad_token_id
+#         )
 
-        # print("Raw model output:", output)
+#         # print("Raw model output:", output)
 
-        decoded_outputs = [tokenizer.decode(output[i], skip_special_tokens=True) for i in range(len(output))]
+#         decoded_outputs = [tokenizer.decode(output[i], skip_special_tokens=True) for i in range(len(output))]
         
-        results = []
-        for decoded_output in decoded_outputs:
-            print("Decoded Output:", decoded_output)
+#         results = []
+#         for decoded_output in decoded_outputs:
+#             print("Decoded Output:", decoded_output)
 
-            # Initialize variables for query and constructs
-            query = ""
-            constructs = []
+#             # Initialize variables for query and constructs
+#             query = ""
+#             constructs = []
 
-            # Check if the output contains "Query:" and "Constructs:"
-            try:
-                # Extract the Query part
-                if "Query:" in decoded_output:
-                    query_part = decoded_output.split("Query:")[1].strip()
-                    if "Constructs:" in query_part:
-                        query = query_part.split("Constructs:")[0].strip()  # Exclude constructs
-                    else:
-                        query = query_part  # Take the remaining part if no Constructs section
+#             # Check if the output contains "Query:" and "Constructs:"
+#             try:
+#                 # Extract the Query part
+#                 if "Query:" in decoded_output:
+#                     query_part = decoded_output.split("Query:")[1].strip()
+#                     if "Constructs:" in query_part:
+#                         query = query_part.split("Constructs:")[0].strip()  # Exclude constructs
+#                     else:
+#                         query = query_part  # Take the remaining part if no Constructs section
 
-                # Extract the Constructs part if it exists
-                if "Constructs:" in decoded_output:
-                    constructs_part = decoded_output.split("Constructs:")[1].strip()
-                    constructs = [c.strip() for c in constructs_part.split(',')]  # Split constructs by comma
+#                 # Extract the Constructs part if it exists
+#                 if "Constructs:" in decoded_output:
+#                     constructs_part = decoded_output.split("Constructs:")[1].strip()
+#                     constructs = [c.strip() for c in constructs_part.split(',')]  # Split constructs by comma
 
-            except Exception as e:
-                print(f"Error processing decoded output: {str(e)}")
+#             except Exception as e:
+#                 print(f"Error processing decoded output: {str(e)}")
 
-            results.append({'query': query, 'constructs': constructs})
-        return results
+#             results.append({'query': query, 'constructs': constructs})
+#         return results
     
-    except Exception as e:
-        print(f"Error generating query: {str(e)}")
-        raise
+#     except Exception as e:
+#         print(f"Error generating query: {str(e)}")
+#         raise
 
 def generate_description(query):
     description = "This query"
