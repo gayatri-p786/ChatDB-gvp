@@ -2,7 +2,7 @@ import mysql.connector
 import pandas as pd
 import csv
 import re
-import json
+import difflib
 import random
 
 class ChatDB:
@@ -97,7 +97,23 @@ class ChatDB:
         except mysql.connector.Error as err:
             self.conn.rollback()
             return {"error": str(err)}
+        
+    def get_all_tables(self):
+        try:
+            self.cursor.execute("SHOW TABLES")
+            return [table[0] for table in self.cursor.fetchall()]
+        except mysql.connector.Error as err:
+            print(f"Error: {err}")
+            return []
 
+    def get_table_columns(self, table_name):
+        try:
+            self.cursor.execute(f"DESCRIBE {table_name}")
+            columns = [column[0] for column in self.cursor.fetchall()]
+            return columns
+        except mysql.connector.Error as err:
+            print(f"Error: {err}")
+            return []
 
     def execute_custom_query(self, query, params=None):
         """Executes a custom SQL query and returns the result."""
@@ -356,87 +372,6 @@ class ChatDB:
         self.conn.close()
 
 
-# def load_model(model_path):
-#     try:
-#         # print("model is here", model_path)
-#         # Initialize tokenizer from pretrained T5 model first
-#         tokenizer = T5Tokenizer.from_pretrained(model_path)
-        
-#         # Load the fine-tuned model
-#         model = T5ForConditionalGeneration.from_pretrained(
-#             model_path,
-#             return_dict=True
-#         )
-        
-#         return tokenizer, model
-#     except Exception as e:
-#         print(f"Error loading model: {str(e)}")
-#         raise
-
-# def generate_query(schema_info, tokenizer, model, construct=None):
-#     try:
-#         full_input = json.dumps(schema_info)
-        
-#         if construct:
-#             full_input += f"\nTask: Generate a query using {construct}"
-#         else:
-#             full_input += "\nTask: Generate a random SQL query"
-        
-#         inputs = tokenizer(
-#             full_input,
-#             return_tensors="pt",
-#             padding=True,
-#             truncation=True,
-#             max_length=512
-#         )
-        
-#         output = model.generate(
-#             inputs['input_ids'],
-#             max_length=200,
-#             do_sample=True,
-#             top_k=50,
-#             top_p=0.95,
-#             num_return_sequences=5 if not construct else 1,
-#             pad_token_id=tokenizer.pad_token_id
-#         )
-
-#         # print("Raw model output:", output)
-
-#         decoded_outputs = [tokenizer.decode(output[i], skip_special_tokens=True) for i in range(len(output))]
-        
-#         results = []
-#         for decoded_output in decoded_outputs:
-#             print("Decoded Output:", decoded_output)
-
-#             # Initialize variables for query and constructs
-#             query = ""
-#             constructs = []
-
-#             # Check if the output contains "Query:" and "Constructs:"
-#             try:
-#                 # Extract the Query part
-#                 if "Query:" in decoded_output:
-#                     query_part = decoded_output.split("Query:")[1].strip()
-#                     if "Constructs:" in query_part:
-#                         query = query_part.split("Constructs:")[0].strip()  # Exclude constructs
-#                     else:
-#                         query = query_part  # Take the remaining part if no Constructs section
-
-#                 # Extract the Constructs part if it exists
-#                 if "Constructs:" in decoded_output:
-#                     constructs_part = decoded_output.split("Constructs:")[1].strip()
-#                     constructs = [c.strip() for c in constructs_part.split(',')]  # Split constructs by comma
-
-#             except Exception as e:
-#                 print(f"Error processing decoded output: {str(e)}")
-
-#             results.append({'query': query, 'constructs': constructs})
-#         return results
-    
-#     except Exception as e:
-#         print(f"Error generating query: {str(e)}")
-#         raise
-
 def generate_description(query):
     description = "This query"
 
@@ -508,6 +443,103 @@ def generate_description(query):
         description += f" limited to {limit_value} result(s)"
 
     return description.strip() + "."
+
+def natural_language_to_sql(db, question):
+    question = question.lower()
+    
+    all_tables = db.get_all_tables()
+    table_columns = {table: db.get_table_columns(table) for table in all_tables}
+    
+    patterns = {
+        "total {A} by {B}": "SELECT {B}, SUM({A}) FROM {table} GROUP BY {B}",
+        "average {A} by {B}": "SELECT {B}, AVG({A}) FROM {table} GROUP BY {B}",
+        "count of {A} by {B}": "SELECT {B}, COUNT({A}) FROM {table} GROUP BY {B}",
+        "list all {A}": "SELECT DISTINCT {A} FROM {table}",
+        "top {N} {A} by {B}": "SELECT {A}, {B} FROM {table} ORDER BY {B} DESC LIMIT {N}",
+        "find {A} where {B} is {C}": "SELECT {A} FROM {table} WHERE {B} = '{C}'",
+        "maximum {A}": "SELECT MAX({A}) FROM {table}",
+        "minimum {A}": "SELECT MIN({A}) FROM {table}",
+        "{A} greater than {B}": "SELECT * FROM {table} WHERE {A} > {B}",
+        "{A} less than {B}": "SELECT * FROM {table} WHERE {A} < {B}",
+        "{A} between {B} and {C}": "SELECT * FROM {table} WHERE {A} BETWEEN {B} AND {C}",
+        "{A} like {B}": "SELECT * FROM {table} WHERE {A} LIKE '%{B}%'",
+        "count distinct {A}": "SELECT COUNT(DISTINCT {A}) FROM {table}",
+        "group {A} by {B}": "SELECT {B}, COUNT(*) FROM {table} GROUP BY {B}",
+        "sum of {A}": "SELECT SUM({A}) FROM {table}"
+    }
+    
+    def find_best_match(word, columns):
+        return max(columns, key=lambda x: difflib.SequenceMatcher(None, word, x).ratio())
+    
+    def select_table(columns):
+        table_scores = {table: sum(1 for col in columns if col in table_cols) 
+                        for table, table_cols in table_columns.items()}
+        return max(table_scores, key=table_scores.get)
+    
+    for pattern, sql_template in patterns.items():
+        if all(keyword in question for keyword in pattern.split() if keyword not in ['{A}', '{B}', '{C}', '{N}']):
+            words = question.split()
+            A = next((find_best_match(word, sum(table_columns.values(), [])) for word in words 
+                      if any(difflib.SequenceMatcher(None, word, col).ratio() > 0.6 for col in sum(table_columns.values(), []))), None)
+            B = next((find_best_match(word, sum(table_columns.values(), [])) for word in reversed(words) 
+                      if word != A and any(difflib.SequenceMatcher(None, word, col).ratio() > 0.6 for col in sum(table_columns.values(), []))), None)
+            C = next((word for word in words if word not in pattern.split() and word != A and word != B), None)
+            N = next((word for word in words if word.isdigit()), None)
+            
+            if A:
+                table = select_table([A, B] if B else [A])
+                if table:
+                    sql = sql_template.format(A=A, B=B, C=C, N=N, table=table)
+                    return sql
+    
+    return "Sorry, I couldn't generate a SQL query for that question."
+
+# def natural_language_to_sql(db, question):
+#     # print(f"Processing question: {question}")
+    
+#     question = question.lower()
+    
+#     # Get all tables and their columns
+#     all_tables = db.get_all_tables()
+#     # print(f"All tables: {all_tables}")
+#     table_columns = {table: db.get_table_columns(table) for table in all_tables}
+#     # print(f"Table columns: {table_columns}")
+    
+#     # Define some basic patterns
+#     patterns = {
+#         "total {A} by {B}": "SELECT {B}, SUM({A}) FROM {table} GROUP BY {B}",
+#         "average {A} by {B}": "SELECT {B}, AVG({A}) FROM {table} GROUP BY {B}",
+#         "count of {A} by {B}": "SELECT {B}, COUNT({A}) FROM {table} GROUP BY {B}",
+#         "list all {A}": "SELECT DISTINCT {A} FROM {table}",
+#         "top {N} {A} by {B}": "SELECT {A}, {B} FROM {table} ORDER BY {B} DESC LIMIT {N}"
+#     }
+    
+#     for pattern, sql_template in patterns.items():
+#         print(f"Checking pattern: {pattern}")
+#         if all(keyword in question for keyword in pattern.split() if keyword not in ['{A}', '{B}', '{N}']):
+#             print(f"Pattern matched: {pattern}")
+#             words = question.split()
+#             A = next((word for word in words if any(word in columns for columns in table_columns.values())), None)
+#             B = next((word for word in reversed(words) if word != A and any(word in columns for columns in table_columns.values())), None)
+#             N = next((word for word in words if word.isdigit()), None)
+            
+#             # print(f"Extracted A: {A}, B: {B}, N: {N}")
+            
+#             if A and B:
+#                 # Find the table that contains both A and B
+#                 table = next((table for table, columns in table_columns.items() if A in columns and B in columns), None)
+#                 # print(f"Found table: {table}")
+#                 if table:
+#                     sql = sql_template.format(A=A, B=B, N=N, table=table)
+#                     # print(f"Generated SQL: {sql}")
+#                     return sql
+#                 else:
+#                     print("No table found containing both A and B")
+#             else:
+#                 print("Could not extract both A and B from the question")
+    
+#     print("No matching pattern or valid extraction found")
+#     return "Sorry, I couldn't generate a SQL query for that question."
 
 # Utility functions for CSV and Excel parsing
 def parse_excel(file_path):

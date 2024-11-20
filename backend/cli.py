@@ -1,9 +1,15 @@
 # cli.py
 
+#Polishing left (nl to sql)
+#add option to execute user's query. polish chat interface a bit more
+#test on 3 datasets (one is covid, one can be coffee_shop, find another (or use spark json files and test for those queries))
+
+
+
 import os
 import sys
 import re
-from chatdb import ChatDB, parse_excel, parse_csv, generate_description  # Import necessary functions
+from chatdb import ChatDB, parse_excel, parse_csv, generate_description, natural_language_to_sql  # Import necessary functions
 
 
 def create_table_and_import_data(db, sheets):
@@ -39,53 +45,6 @@ def upload_data(db):
     else:
         print("Unsupported file type. Only .xlsx and .csv files are supported.")
 
-# def generate_query_with_construct(db, db_name, construct):
-#     try:
-#         schema_info = db.get_schema_info(db_name)
-#         tokenizer, model = load_model('sql_generation_model_2')
-#         generated_results = generate_query(schema_info, tokenizer, model, construct)
-
-#         if generated_results:
-#             result = generated_results[0]
-#             query = result['query']
-#             constructs = result['constructs']
-            
-#             # Generate description
-#             description = generate_description(query)
-            
-#             print(f"Generated Query with {construct}:")
-#             print(f"Description: {description}")
-#             print(f"Query: {query}")
-#             print(f"Constructs: {', '.join(constructs)}")
-#         else:
-#             print(f"No query generated for construct: {construct}")
-#     except Exception as e:
-#         print(f"An error occurred while generating query with construct: {e}")
-
-# def generate_sample_queries(db, db_name):
-#     try:
-#         # Retrieve the schema information for the connected database
-#         schema_info = db.get_schema_info(db_name)
-
-#         # Load the model and tokenizer for generating SQL queries
-#         tokenizer, model = load_model('./sql_generation_model_2')
-
-#         # Generate the SQL queries
-#         generated_results = generate_query(schema_info, tokenizer, model)
-
-#         # Handle the generated queries, constructs, and descriptions
-#         for i, result in enumerate(generated_results):
-#             print(f"Generated Query {i + 1}:")
-            
-#             # Generate description
-#             description = generate_description(result['query'])
-            
-#             print(f"Description: {description}")
-#             print(f"Query: {result['query']}")
-#             print(f"Constructs: {', '.join(result['constructs'])}")
-#             print("---")
-#     except Exception as e:
-#         print(f"An error occurred while generating sample queries: {e}")
 
 def display_table_info(db, table_name):
     table_info = db.get_table_info_and_sample_data(table_name)
@@ -234,6 +193,25 @@ def main():
                     query_to_execute = sample_queries[0]  # There's only one query when using a specific construct
                     print(f"Executing query: {query_to_execute}")
                     result = db.execute_custom_query(query_to_execute)
+                    if "error" in result:
+                        print(f"Error executing query: {result['error']}")
+                    else:
+                        print("Query results:")
+                        for row in result['data']:
+                            print(row)
+        
+        elif "natural language" in user_input or "nl to sql" in user_input:
+            if not current_database:
+                print("Please select a database first.")
+            else:
+                question = input("Please enter your natural language question: ")
+                sql_query = natural_language_to_sql(db, question)
+                print("Generated SQL Query:")
+                print(sql_query)
+                
+                execute_option = input("Would you like to execute this query? (yes/no): ").strip().lower()
+                if execute_option == 'yes':
+                    result = db.execute_custom_query(sql_query)
                     if "error" in result:
                         print(f"Error executing query: {result['error']}")
                     else:
