@@ -22,7 +22,6 @@ eggs/
 venv/
 ENV/
 env/
-chatdb/
 newenv/
 venv.bak/
 
@@ -37,5 +36,3 @@ venv.bak/
 
 # Data files (if not meant to be shared)
 datasets/
-sql_generation_model/
-sql_generation_model_2/

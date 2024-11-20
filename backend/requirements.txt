@@ -2,7 +2,3 @@ mysql-connector-python
 numpy
 pandas
 nltk
-spacy
-torch
-sentencepiece
-transformers
