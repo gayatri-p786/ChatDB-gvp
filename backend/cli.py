@@ -52,15 +52,15 @@ def display_table_info(db, table_name):
         print(f"\nTable: {table_info['table_name']}")
         print("Structure:")
         for column in table_info['structure']:
-            print(f"  {column['Field']} ({column['Type']})")
+            print(f"  {column[0]} ({column[1]})")  # Assuming Field is at index 0 and Type at index 1
         print("\nSample Data:")
         if table_info['sample_data']:
-            headers = table_info['sample_data'][0].keys()
+            headers = [desc[0] for desc in db.cursor.description]  # Get column names from cursor description
             row_format = "  ".join(["{:<15}" for _ in headers])
             print(row_format.format(*headers))
             print("  " + "-" * (15 * len(headers)))
             for row in table_info['sample_data']:
-                print(row_format.format(*[str(val)[:15] for val in row.values()]))
+                print(row_format.format(*[str(val)[:15] for val in row]))
         else:
             print("  (No data available)")
         print("\n")
