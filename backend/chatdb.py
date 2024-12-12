@@ -282,7 +282,7 @@ class ChatDB:
 
             # Date specific queries
             if date_cols:
-                templates.append(f"SELECT * FROM {table} WHERE {date_cols[0]} = '{{date}}' LIMIT 5")
+                templates.append(f"SELECT * FROM {table} WHERE {date_cols[0]} = {{date}} LIMIT 5")
                 if len(date_cols) >= 2:
                     templates.append(f"SELECT * FROM {table} WHERE {date_cols[0]} BETWEEN '{{date_start}}' AND '{{date_end}}' LIMIT 5")
 
