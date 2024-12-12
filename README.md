@@ -11,7 +11,7 @@ ChatDB is an interactive, user-friendly tool designed to help you understand and
 - 📋 **Natural Language to SQL**: Input natural language queries and watch them transform into SQL statements.
 - 📊 **Query Execution**: Run both system-generated and user-defined queries directly on a MySQL database.
 - 🔄 **Dynamic Query Generation**: Learn by example as ChatDB provides randomly generated SQL queries with diverse query constructs.
-- 📂 **CSV Upload**: Easily upload datasets in CSV format, and ChatDB will handle parsing and storage in MySQL.
+- 📂 **CSV/Excel Upload**: Easily upload datasets in CSV format, and ChatDB will handle parsing and storage in MySQL.
 - 🎓 **Interactive CLI**: No need for a web app — everything is accessible directly from your terminal.
 
 ---
@@ -37,8 +37,8 @@ Want to see how SQL queries work? ChatDB generates random SQL queries for you to
 - Randomly selects a query template.
 - Dynamically fills in table names, categorical/numerical/date columns to create complete queries.
 
-### **3️⃣ CSV Data Upload**
-- Upload CSV files to ChatDB.
+### **3️⃣ CSV/Excel Data Upload**
+- Upload CSV/Excel files to ChatDB.
 - Data is automatically parsed and stored in MySQL tables with appropriate column data types.
 
 ### **4️⃣ Direct SQL Query Execution**
@@ -50,8 +50,9 @@ Want to see how SQL queries work? ChatDB generates random SQL queries for you to
 ## 🛠️ **Installation**
 1. **Clone the repository**
    ```bash
-   git clone [REPO LINK]
-   cd ChatDB
+   git clone https://github.com/gayatri-p786/ChatDB-gvp
+   cd ChatDB-gvp
+   cd backend
    ```
 2. **Install required libraries**
    ```bash
@@ -62,7 +63,7 @@ Want to see how SQL queries work? ChatDB generates random SQL queries for you to
    - Update your database configuration in the `config.py` file.
 4. **Run the CLI**
    ```bash
-   python chatdb.py
+   python cli.py
    ```
 
 ---
@@ -71,35 +72,41 @@ Want to see how SQL queries work? ChatDB generates random SQL queries for you to
 
 ### **Running ChatDB**
 ```bash
-python chatdb.py
+python cli.py
 ```
 You'll be greeted with an interactive CLI where you can:
-- **Upload datasets** using CSV files.
+- **Upload datasets** using CSV/Excel files.
 - **Ask natural language questions** like "Show total revenue by region."
 - **Generate random SQL queries** for learning purposes.
 - **Run your own SQL queries** directly.
 
 ### **Available Commands**
-| **Command**        | **Description**                             |
-|-------------------|--------------------------------------------|
-| `upload <file>`    | Upload a CSV file to MySQL                  |
-| `query <text>`     | Ask a question in natural language         |
-| `execute <sql>`    | Execute a user-defined SQL query           |
-| `generate`         | Generate and display a random SQL query    |
-| `exit`             | Exit the ChatDB CLI                        |
+| **Command**                     | **Description**                            |
+|---------------------------------|--------------------------------------------|
+| `upload data`                   | Upload a CSV/Excel file to MySQL           |
+| `nl to sql`                     | Ask a question in natural language         |
+| `execute query`                 | Execute a user-defined SQL query           |
+| `generate sample query`         | Generate and display a random SQL query    |
+| `exit`                          | Exit the ChatDB CLI                        |
 
 ---
 
 ## 📸 **Screenshots**
 
 **1️⃣ CLI Home Screen**
+![CLI Home Screen](screenshots/start.png)
 
+**2️⃣ Exploring DB**
+![Exploring DB](screenshots/explore.png)
 
-**2️⃣ Query Execution Example**
+**3️⃣ Sample Query Generation**
+![Sample Query](screenshots/sample.png)
 
+**4️⃣ Sample Query Generation with specific Construct**
+![Sample Query with Construct](screenshots/construct.png)
 
-**3️⃣ Sample Query Generator**
-
+**5️⃣ Natural Language Queries**
+![Natural Language Queries](screenshots/nl_sql.png)
 
 ---
 
@@ -118,4 +125,3 @@ You'll be greeted with an interactive CLI where you can:
 ---
 
 🌟 **If you find this project helpful, don't forget to give it a star!** 🌟
-```
