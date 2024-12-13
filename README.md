@@ -47,6 +47,22 @@ Want to see how SQL queries work? ChatDB generates random SQL queries for you to
 
 ---
 
+## File Structure
+
+The project is organized as follows:
+
+### Root Directory
+- `screenshots/`: Contains screenshots of the program in action.
+- `backend/`: Houses the entire application.
+
+### Backend Directory
+- `requirements.txt`: Lists all Python dependencies required for the project.
+- `chatdb.py`: Defines the ChatDB class, which manages interactions with the database.
+- `utils.py`: Contains all helper backend code, including natural language to SQL conversion, sample query generation, and file parsing functions.
+- `cli.py`: Handles all user interactions through the command-line interface.
+
+---
+
 ## 🛠️ **Installation**
 1. **Clone the repository**
    ```bash
