@@ -9,7 +9,8 @@
 import os
 import sys
 import re
-from chatdb import ChatDB, parse_excel, parse_csv, generate_description, natural_language_to_sql  # Import necessary functions
+from chatdb import ChatDB
+from utils import parse_excel, parse_csv, generate_description, natural_language_to_sql  # Import necessary functions
 
 
 def create_table_and_import_data(db, sheets):

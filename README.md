@@ -7,6 +7,8 @@ Welcome to **ChatDB**, your one-stop platform to learn and master SQL querying l
 ## 🚀 **About the Project**
 ChatDB is an interactive, user-friendly tool designed to help you understand and execute SQL queries effortlessly. Using pattern-matching techniques and a smart query generation engine, ChatDB bridges the gap between natural language and SQL commands, making database querying accessible to everyone.
 
+---
+
 ### **Key Features**
 - 📋 **Natural Language to SQL**: Input natural language queries and watch them transform into SQL statements.
 - 📊 **Query Execution**: Run both system-generated and user-defined queries directly on a MySQL database.
