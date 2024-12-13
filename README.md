@@ -78,7 +78,7 @@ The project is organized as follows:
    ```
 3. **Set up MySQL Database**
    - Create a MySQL database.
-   - Update your database configuration in the `config.py` file.
+   - Update your database configuration in the `chatdb.py` file.
 4. **Run the CLI**
    ```bash
    python cli.py
